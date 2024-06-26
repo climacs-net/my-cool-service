@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: opa
-        image: openpolicyagent/opa:edge-rootless
+        image: openpolicyagent/opa:latest
         args:
         - "run"
         - "--server"

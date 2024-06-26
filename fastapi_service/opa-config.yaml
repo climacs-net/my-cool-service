@@ -6,7 +6,7 @@ metadata:
 data:
   config.yaml: |
     services:
-      - name: policy-service
+      - name: example
         url: http://localhost:8181/v1
     labels:
       app: "opa"
@@ -15,8 +15,8 @@ data:
       prefix: config
     bundle:
       name: example
-      service: policy-service
+      service: example
       resource: example/bundle.tar.gz
     plugins:
       - name: http.send
-        service: policy-service
+        service: example

@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-cool-service
-  namespace: default
 spec:
   replicas: 1
   selector:
@@ -15,6 +14,9 @@ spec:
     spec:
       containers:
       - name: my-cool-service
-        image: your-dockerhub-username/my-cool-service
+        image: climacs/my-cool-service:latest
         ports:
-        - containerPort: 8000
+        - containerPort: 80
+        env:
+        - name: OPA_URL
+          value: "http://opa-service.opa.svc.cluster.local/v1/data/authz/allow"
