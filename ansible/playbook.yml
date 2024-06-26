@@ -1,3 +1,4 @@
+---
 - hosts: all
   become: yes
   tasks:
@@ -6,11 +7,26 @@
         update_cache: yes
         upgrade: yes
 
+    - name: Install Snap package manager
+      apt:
+        name: 
+          - snapd
+        state: present
+
+    - name: Install kubectl using Snap
+      shell: sudo snap install kubectl --classic
+
     - name: Install required packages
       apt:
         name: 
+          - python3
           - python3-pip
           - docker.io
+          - curl
+          - wget
+          - tree
+          - conntrack
+          - golang-go
         state: present
 
     - name: Add user to docker group
@@ -22,33 +38,74 @@
     - name: Install Minikube
       shell: |
         curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-        install minikube-linux-amd64 /usr/local/bin/minikube
+        install -o root -g root -m 0755 minikube-linux-amd64 /usr/local/bin/minikube
+        rm minikube-linux-amd64
 
-    - name: Add public key to authorized_keys
-      authorized_key:
-        user: ubuntu
-        state: present
-        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+    - name: Install crictl
+      shell: |
+        VERSION="v1.24.1"
+        curl -LO "https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-$VERSION-linux-amd64.tar.gz"
+        sudo tar -C /usr/local/bin -xzvf "crictl-$VERSION-linux-amd64.tar.gz"
+        rm "crictl-$VERSION-linux-amd64.tar.gz"
 
-    - name: Start Minikube
-      command: minikube start --driver=docker
+    - name: Ensure conntrack is in the PATH
+      shell: |
+        if ! command -v conntrack &> /dev/null
+        then
+            echo "conntrack is not in the PATH, creating symbolic link..."
+            ln -s /usr/sbin/conntrack /usr/bin/conntrack
+        fi
 
-    - name: Deploy OPA and service
+    - name: Verify conntrack installation
+      shell: |
+        if ! command -v conntrack &> /dev/null
+        then
+            echo "conntrack could not be found after installation"
+            exit 1
+        fi
+
+    - name: Install cri-dockerd
+      shell: |
+        git clone https://github.com/Mirantis/cri-dockerd.git /tmp/cri-dockerd
+        cd /tmp/cri-dockerd
+        mkdir bin
+        /usr/local/go/bin/go get
+        /usr/local/go/bin/go build -o bin/cri-dockerd
+        sudo install -o root -g root -m 0755 bin/cri-dockerd /usr/local/bin/cri-dockerd
+        sudo cp -a packaging/systemd/* /etc/systemd/system
+        sudo sed -i 's|/usr/bin/cri-dockerd|/usr/local/bin/cri-dockerd|' /etc/systemd/system/cri-docker.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable cri-docker.service
+        sudo systemctl enable --now cri-docker.socket
+        sudo systemctl start cri-docker.service
+        sudo systemctl start cri-docker.socket
+
+    - name: Fix permissions for Minikube
+      shell: sudo sysctl fs.protected_regular=0
+
+    - name: Install containernetworking-plugins
+      shell: |
+        sudo mkdir -p /opt/cni/bin
+        sudo curl -L https://github.com/containernetworking/plugins/releases/download/v1.1.1/cni-plugins-linux-amd64-v1.1.1.tgz | sudo tar -C /opt/cni/bin -xz
+
+    - name: Move Minikube and kubectl configuration
+      shell: |
+        sudo mv /root/.kube $HOME
+        sudo mv /root/.minikube $HOME
+        sudo chown -R $USER $HOME/.kube $HOME/.minikube
+
+    - name: Create directory for deployment files
+      file:
+        path: /home/ubuntu/fastapi_service
+        state: directory
+
+    - name: Copy OPA and service YAML files to the server
       copy:
         src: "{{ item }}"
-        dest: /home/ubuntu/
-      loop:
-        - fastapi_service/opa-configmap.yaml
-        - fastapi_service/opa-config.yaml
-        - fastapi_service/opa-deployment.yaml
-        - fastapi_service/service-deployment.yaml
-        - fastapi_service/service.yaml
-
-    - name: Apply Kubernetes configurations
-      command: kubectl apply -f /home/ubuntu/{{ item }}
-      loop:
-        - opa-configmap.yaml
-        - opa-config.yaml
-        - opa-deployment.yaml
-        - service-deployment.yaml
-        - service.yaml
+        dest: /home/ubuntu/fastapi_service/{{ item | basename }}"
+      with_items:
+        - ../fastapi_service/opa-configmap.yaml
+        - ../fastapi_service/opa-config.yaml
+        - ../fastapi_service/opa-deployment.yaml
+        - ../fastapi_service/service-deployment.yaml
+        - ../fastapi_service/service.yaml
