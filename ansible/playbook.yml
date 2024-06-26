@@ -1,0 +1,54 @@
+- hosts: all
+  become: yes
+  tasks:
+    - name: Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install required packages
+      apt:
+        name: 
+          - python3-pip
+          - docker.io
+        state: present
+
+    - name: Add user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Install Minikube
+      shell: |
+        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        install minikube-linux-amd64 /usr/local/bin/minikube
+
+    - name: Add public key to authorized_keys
+      authorized_key:
+        user: ubuntu
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+
+    - name: Start Minikube
+      command: minikube start --driver=docker
+
+    - name: Deploy OPA and service
+      copy:
+        src: "{{ item }}"
+        dest: /home/ubuntu/
+      loop:
+        - fastapi_service/opa-configmap.yaml
+        - fastapi_service/opa-config.yaml
+        - fastapi_service/opa-deployment.yaml
+        - fastapi_service/service-deployment.yaml
+        - fastapi_service/service.yaml
+
+    - name: Apply Kubernetes configurations
+      command: kubectl apply -f /home/ubuntu/{{ item }}
+      loop:
+        - opa-configmap.yaml
+        - opa-config.yaml
+        - opa-deployment.yaml
+        - service-deployment.yaml
+        - service.yaml

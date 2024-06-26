@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-cool-service
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-cool-service
+  template:
+    metadata:
+      labels:
+        app: my-cool-service
+    spec:
+      containers:
+      - name: my-cool-service
+        image: your-dockerhub-username/my-cool-service
+        ports:
+        - containerPort: 8000
